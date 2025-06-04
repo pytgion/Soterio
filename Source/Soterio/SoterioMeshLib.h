@@ -60,4 +60,7 @@ public:
 	static void CheckMeshHealth(FProductProperties* Product);
 	static bool IsDegenerateTriangle(const FVector3f& P0, const FVector3f& P1, const FVector3f& P2, float Threshold);
 	static void FixDegenerateTriangles(FProductProperties& ProductProperties);
+
+	UFUNCTION(BlueprintCallable)
+	static bool WriteRealtimeMeshToOBJ(const FString& FilePath, const struct FProductProperties& Mesh);
 };

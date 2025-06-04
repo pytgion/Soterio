@@ -254,7 +254,9 @@ void ABladesmithController::TestController(APlayerController* PC)
 	}
 	if (PC->WasInputKeyJustPressed(EKeys::F))
 	{
-
+		FString a; 
+		a.Empty();
+		USoterioMeshLib::WriteRealtimeMeshToOBJ(a, *(ProductQuery[0]));
 	}
 	if (PC->WasInputKeyJustPressed(EKeys::B))
 	{
