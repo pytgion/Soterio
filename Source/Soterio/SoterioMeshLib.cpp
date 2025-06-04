@@ -455,7 +455,7 @@ void USoterioMeshLib::UpdateHeat(FProductProperties& Product, float Heat)
 {
 	const float MaxHeat = 1440.0f;
 	float HeatFactor = 0.8f;
-	const float MaxDistance =19.5f;
+	const float MaxDistance = 19.5f;
 
 	for (int i = 0; i < Product.Vertices.Num(); i++)
 	{
@@ -585,7 +585,7 @@ void USoterioMeshLib::AlignCenter(FProductProperties* Product, bool AlignHorizon
 
 void USoterioMeshLib::AlignRaw()
 {
-	
+
 }
 
 TObjectPtr<USplineComponent> USoterioMeshLib::GenerateSpline(FProductProperties& Product, URealtimeMeshComponent& Component)
@@ -695,4 +695,89 @@ void USoterioMeshLib::FixDegenerateTriangles(FProductProperties& ProductProperti
 		id = Index;
 	}
 	UE_LOG(LogTemp, Warning, TEXT("%d Triangles Affected"), id);
+}
+
+bool USoterioMeshLib::WriteRealtimeMeshToOBJ(const FString& FilePath, const FProductProperties& Mesh)
+{
+	const FString TimeStamp = FDateTime::Now()
+		.ToString(TEXT("%Y-%m-%d-%H-%M-%S"));
+	const FString savedir = FilePath.IsEmpty() ?
+		FPaths::Combine(
+			TEXT("C:/SoterioObjects"),
+			FString::Printf(TEXT("RealtimeMesh_%s.obj"), *TimeStamp)) :
+		FilePath;
+	const FString Directory = FPaths::GetPath(savedir);
+	IFileManager::Get().MakeDirectory(*Directory, /*Tree=*/true);
+
+	TArray<FString> Lines;
+	Lines.Reserve(Mesh.Vertices.Num() * 3 / 2);	// rough guess to avoid reallocs
+
+	// 1. vertices
+	for (const FVector3f& V : Mesh.Vertices)
+	{
+		Lines.Add(FString::Printf(TEXT("v %s %s %s"),
+			*FString::SanitizeFloat(V.X),
+			*FString::SanitizeFloat(V.Y),
+			*FString::SanitizeFloat(V.Z)));
+	}
+
+	// 2. texture coordinates (optional)
+	const bool bHasUVs = Mesh.UVs.Num() == Mesh.Vertices.Num();
+	if (bHasUVs)
+	{
+		for (const FVector2f& UV : Mesh.UVs)
+		{
+			// flip V so OBJ (bottom-left origin) matches UE (top-left)
+			Lines.Add(FString::Printf(TEXT("vt %s %s"),
+				*FString::SanitizeFloat(UV.X),
+				*FString::SanitizeFloat(1.0f - UV.Y)));
+		}
+	}
+
+	// 3. normals (optional)
+	const bool bHasNormals = Mesh.Normals.Num() == Mesh.Vertices.Num();
+	if (bHasNormals)
+	{
+		for (const FVector3f& N : Mesh.Normals)
+		{
+			Lines.Add(FString::Printf(TEXT("vn %s %s %s"),
+				*FString::SanitizeFloat(N.X),
+				*FString::SanitizeFloat(N.Y),
+				*FString::SanitizeFloat(N.Z)));
+		}
+	}
+
+	// 4. faces (triangles) — OBJ is 1-based
+	const int32 NumTriangles = Mesh.Triangles.Num() / 3;
+	for (int32 TriIdx = 0; TriIdx < NumTriangles; ++TriIdx)
+	{
+		const int32 V0 = Mesh.Triangles[TriIdx * 3] + 1;
+		const int32 V1 = Mesh.Triangles[TriIdx * 3 + 1] + 1;
+		const int32 V2 = Mesh.Triangles[TriIdx * 3 + 2] + 1;
+
+		FString Face;
+		if (bHasUVs && bHasNormals)
+		{
+			Face = FString::Printf(TEXT("f %d/%d/%d %d/%d/%d %d/%d/%d"),
+				V0, V0, V0, V1, V1, V1, V2, V2, V2);
+		}
+		else if (bHasUVs)
+		{
+			Face = FString::Printf(TEXT("f %d/%d %d/%d %d/%d"),
+				V0, V0, V1, V1, V2, V2);
+		}
+		else if (bHasNormals)
+		{
+			Face = FString::Printf(TEXT("f %d//%d %d//%d %d//%d"),
+				V0, V0, V1, V1, V2, V2);
+		}
+		else
+		{
+			Face = FString::Printf(TEXT("f %d %d %d"), V0, V1, V2);
+		}
+		Lines.Add(Face);
+	}
+
+	// 5. write to disk
+	return FFileHelper::SaveStringArrayToFile(Lines, *savedir);
 }
