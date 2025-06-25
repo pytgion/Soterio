@@ -8,6 +8,7 @@
 #include "Components/SplineComponent.h"
 #include "GameTypes.generated.h"
 
+
 // Enums
 UENUM(BlueprintType)
 enum class ES_GameMode : uint8
@@ -187,6 +188,9 @@ struct FProductProperties
     UPROPERTY()
     float MaxLength;
 
+    UPROPERTY()
+	float MaxThickness;
+
     float SplineDisp;
 
     UPROPERTY()
@@ -206,6 +210,7 @@ struct FProductProperties
         Spline = NULL;
         ProductID = FGuid::NewGuid();
         MaxLength = 30;
+		MaxThickness = 0.1;
         bIsMaxLength = false;
         UE_LOG(LogTemp, Warning, TEXT("%s is the GUID"), *ProductID.ToString());
     }

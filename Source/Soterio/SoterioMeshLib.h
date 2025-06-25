@@ -45,7 +45,7 @@ public:
 	static bool LoadMeshProperties(FProductProperties& Product, const FString& FilePath);
 
 	static void CalculateSmoothNormals(FProductProperties* Product, int Depth);
-	static void UpdateHeat(FProductProperties& Product, float Heat);
+	static void UpdateHeat(FProductProperties& Product, float Heat, FVector3f HeatPoint);
 	static void DecreaseHeat(FProductProperties& Product);
 	static FColor GenerateVertexColor(float Heat);
 	static UStaticMesh* ConvertToStaticMesh(UObject* Outer, const TArray<FVector3f>& Vertices, const TArray<int32>& Triangles, const TArray<FVector3f>& Normals, const TArray<FVector2f>& UVs);
@@ -56,7 +56,7 @@ public:
 	static void AlignSpline();
 
 	static TObjectPtr<USplineComponent> GenerateSpline(FProductProperties& Product, URealtimeMeshComponent& Component);
-	static bool CheckThickness(FProductProperties& Product);
+	static bool CheckThickness(FProductProperties& Product, FVector3f Vertex);
 	static void CheckMeshHealth(FProductProperties* Product);
 	static bool IsDegenerateTriangle(const FVector3f& P0, const FVector3f& P1, const FVector3f& P2, float Threshold);
 	static void FixDegenerateTriangles(FProductProperties& ProductProperties);

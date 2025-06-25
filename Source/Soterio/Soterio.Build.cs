@@ -16,7 +16,8 @@ public class Soterio : ModuleRules
 			"EnhancedInput",
 			"RealtimeMeshComponent",
 			"Json",
-			"JsonUtilities", 
+			"JsonUtilities",
+			"UMG",
 			"AssetRegistry",
 			"MeshDescription",
 			"StaticMeshDescription"

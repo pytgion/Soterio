@@ -7,6 +7,7 @@
 #include "Misc/Paths.h"
 #include "Serialization/JsonSerializer.h"
 #include "MeshDescription.h"
+#include "Components/DecalComponent.h"
 #include "StaticMeshAttributes.h"
 
 DEFINE_LOG_CATEGORY(LogBladesmithController);
@@ -39,16 +40,16 @@ ABladesmithController::ABladesmithController()
 	ProductComponent->SetupAttachment(RootComponent);
 	ProductComponent->SetVisibility(true);
 
-	if (!BaseStaticMesh)
-	{
-		BaseStaticMesh = LoadObject<UStaticMesh>(nullptr, TEXT("StaticMesh'/Game/untitled.untitled'"));
-	}
+	//if (!BaseStaticMesh)
+	//{
+	//	BaseStaticMesh = LoadObject<UStaticMesh>(nullptr, TEXT("StaticMesh'/Game/untitled.untitled'"));
+	//}
 
-	if (!HammerData)
-	{
-		HammerData = LoadObject<UDataTable>(nullptr, TEXT("DataTable'/Game/HammerData.HammerData'"));
-		UE_LOG(LogBladesmithController, Log, TEXT("Filled HammerData in BladesmithController constructor"));
-	}
+	//if (!HammerData)
+	//{
+	//	HammerData = LoadObject<UDataTable>(nullptr, TEXT("DataTable'/Game/HammerData.HammerData'"));
+	//	UE_LOG(LogBladesmithController, Log, TEXT("Filled HammerData in BladesmithController constructor"));
+	//}
 
 	ProductQuery.Reserve(1);
 }
@@ -56,14 +57,15 @@ ABladesmithController::ABladesmithController()
 void ABladesmithController::Bindings()
 {
 	// Bind Delegate shit
-	if (Character)
-	{
-		Character->NewGameMode.AddUObject(this, &ABladesmithController::SwitchGameMode);
-	}
-	if (Character->NewGameMode.IsBound())
-	{
-		UE_LOG(LogBladesmithController, Log, TEXT("BoundCheck is valid."));
-	}
+	//if (Character)
+	//{
+	//	continue;
+	//	//Character->NewGameMode.AddUObject(this, &ABladesmithController::SwitchGameMode);
+	//}
+	//if (Character->NewGameMode.IsBound())
+	//{
+	//	UE_LOG(LogBladesmithController, Log, TEXT("BoundCheck is valid."));
+	//}
 
 	// Bladesmith Tools
 	TArray<AActor*> ToolActors;
@@ -137,7 +139,39 @@ void ABladesmithController::Bindings()
 			}
 		}
 	}
+
+	/// Ore indicator
+	OreIndicator = NewObject<UDecalComponent>(this);
+	OreIndicator->RegisterComponent();
+	OreIndicator->SetDecalMaterial(DecalMaterial);
+	OreIndicator->DecalSize = FVector(4.f);
+	OreIndicator->SetVisibility(true);
+
+	if (Character)
+		Character->OnGameModeChanged.AddDynamic(this, &ABladesmithController::SwitchGameMode);
+	BindControls();
 }
+
+void ABladesmithController::BindControls()
+{
+	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		if (InputConfigData)
+		{
+			EnhancedInput->BindAction(InputConfigData->IA_Anvil_Exit, ETriggerEvent::Triggered, this, &ABladesmithController::SwitchDefaultMode);
+			EnhancedInput->BindAction(InputConfigData->IA_Anvil_Hit, ETriggerEvent::Triggered, this, &ABladesmithController::OnAnvilHit);
+		}
+	}
+}
+
+void ABladesmithController::OnRotateMesh(bool isClockWise)
+{
+	if (isClockWise)
+		USoterioMeshLib::RotateMesh(ProductQuery[0], -5, 'Y');
+	else
+		USoterioMeshLib::RotateMesh(ProductQuery[0], 5, 'Y');
+}
+
 
 void ABladesmithController::BeginPlay()
 {
@@ -149,6 +183,7 @@ void ABladesmithController::BeginPlay()
 	Player = GetWorld()->GetFirstPlayerController();
 	if (!Player)
 		return;
+	EnableInput(Player);
 	Bindings();
 	if (ProductQuery.Num() == 0)
 	{
@@ -174,6 +209,7 @@ void ABladesmithController::Tick(float DeltaTime)
 	if (CurrentMode == ES_GameMode::Anvil)
 	{
 		PerformRaycastFromAnvilCamera();
+		UpdateAnvilDecalFromMouse(DeltaTime, FVector::ZeroVector);
 	}
 
 	if (bScreenDebug)
@@ -185,6 +221,15 @@ void ABladesmithController::Tick(float DeltaTime)
 	{
 		TestController(PC);
 	}
+}
+
+void ABladesmithController::OnAnvilHit()
+{
+	FVector Location;
+	Location = FVector::ZeroVector;
+	UpdateAnvilDecalFromMouse(GetWorld()->GetDeltaSeconds(), Location);
+	if (Location != FVector::ZeroVector)
+		USoterioMeshLib::ModifyMesh(*ProductQuery[0], *CurrentHammer, PerformRaycastFromAnvilCamera());
 }
 
 void ABladesmithController::TestController(APlayerController* PC)
@@ -237,7 +282,8 @@ void ABladesmithController::TestController(APlayerController* PC)
 	{
 		if (CurrentMode == ES_GameMode::Anvil)
 		{
-			USoterioMeshLib::ModifyMesh(*ProductQuery[0], *CurrentHammer, PerformRaycastFromAnvilCamera());
+			PlayHitSound();
+			USoterioMeshLib::ModifyMesh(*ProductQuery[0], *CurrentHammer, PerformRaycastFromAnvilCamera(), true);
 			UpdateProduct(DefaultSmoothRate);
 		}
 		if (CurrentMode == ES_GameMode::Forge)
@@ -331,9 +377,9 @@ void ABladesmithController::LogError(FString Text)
 	UE_LOG(LogBladesmithController, Error, TEXT("%s"), *Text);
 }
 
-void ABladesmithController::SwitchGameMode(FHitResult HitResult)
+void ABladesmithController::SwitchGameMode(ES_GameMode NewMode)
 {
-	UE_LOG(LogBladesmithController, Log, TEXT("Broadcast Recieved for Actor: %s"), *HitResult.GetActor()->GetFName().ToString());
+	UE_LOG(LogTemp, Warning, TEXT("SwitchMode Called %d"), NewMode);
 	if (CurrentMode != ES_GameMode::Default)
 	{
 		UE_LOG(LogBladesmithController, Log, TEXT("Game mode switched default."));
@@ -341,7 +387,7 @@ void ABladesmithController::SwitchGameMode(FHitResult HitResult)
 		SwitchCamera();
 		return;
 	}
-	if (HitResult.GetActor() == AnvilActor)
+	if (NewMode == ES_GameMode::Anvil)
 	{
 		CurrentMode = ES_GameMode::Anvil;
 		UE_LOG(LogBladesmithController, Log, TEXT("Switching Anvil Mode"));
@@ -350,9 +396,15 @@ void ABladesmithController::SwitchGameMode(FHitResult HitResult)
 			LogWarning("AnvilSocket Found!");
 			ProductComponent->AttachToComponent(AnvilActor->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, "AnvilSocket");
 		}
+		else
+		{
+			LogError("Anvil Socket not found.");
+		}
+		if (AnvilInterface)
+			AnvilInterface->AddToViewport();
 		SwitchCamera();
 	}
-	else if (HitResult.GetActor() == ForgeActor)
+	else if (NewMode == ES_GameMode::Forge)
 	{
 		CurrentMode = ES_GameMode::Forge;
 		UE_LOG(LogBladesmithController, Log, TEXT("Switching Forge Mode"));
@@ -363,13 +415,13 @@ void ABladesmithController::SwitchGameMode(FHitResult HitResult)
 			ProductComponent->AttachToComponent(ForgeActor->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, "ForgeSocket");
 		}
 	}
-	else if (HitResult.GetActor() == WorkbenchActor)
+	else if (NewMode == ES_GameMode::Workbench)
 	{
 		CurrentMode = ES_GameMode::Workbench;
 		UE_LOG(LogBladesmithController, Log, TEXT("Switching Wokrbench Mode"));
 		SwitchCamera();
 	}	
-	else if (HitResult.GetActor() == GrindActor)
+	else if (NewMode == ES_GameMode::Grindstone)
 	{
 		CurrentMode = ES_GameMode::Grindstone;
 		UE_LOG(LogBladesmithController, Log, TEXT("Switching Grind Mode"));
@@ -463,7 +515,7 @@ void ABladesmithController::TimePasses()
 {
 	if (CurrentMode == ES_GameMode::Forge)
 	{
-		USoterioMeshLib::UpdateHeat(*ProductQuery[0], FurnaceHeat);
+		USoterioMeshLib::UpdateHeat(*ProductQuery[0], FurnaceHeat, FVector3f(0, 14, 0));
 	}
 	else
 	{
@@ -478,6 +530,14 @@ void ABladesmithController::TimePasses()
 	else
 	{
 		UE_LOG(LogBladesmithController, Warning, TEXT("New day has started!"));
+	}
+}
+
+void ABladesmithController::PlayHitSound() const
+{
+	if (HitSoundCue)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, HitSoundCue, GetActorLocation());
 	}
 }
 
@@ -563,7 +623,7 @@ void ABladesmithController::HeatUpForge()
 
 void ABladesmithController::SwitchDefaultMode()
 {
-	SwitchGameMode(FHitResult());
+	SwitchGameMode(ES_GameMode::Default);
 }
 
 void ABladesmithController::UpdateProduct(int CalculateNormalDepth)
@@ -632,7 +692,88 @@ void ABladesmithController::UpdateProduct(int CalculateNormalDepth)
 	RealtimeMesh->UpdateSectionConfig(PolyGroup0SectionKey, FRealtimeMeshSectionConfig(0), true);
 }
 
-FHitResult ABladesmithController::PerformRaycastFromAnvilCamera()
+void ABladesmithController::UpdateAnvilDecalFromMouse(float DeltaTime, FVector Location)
+{
+	if (!OreIndicator || !ProductComponent || !AnvilCamera || !Player)
+		return;
+
+	// === 1. Handle mouse delta movement ===
+	static FVector2D MouseOffset = FVector2D::ZeroVector;
+	static FVector2D MouseVelocity = FVector2D::ZeroVector;
+
+	FVector2D RawDelta;
+	Player->GetInputMouseDelta(RawDelta.X, RawDelta.Y);
+
+	const float Accel = 25.f;
+	const float Damping = 10.f;
+
+	MouseVelocity += RawDelta * Accel * DeltaTime;
+	MouseVelocity -= MouseVelocity * Damping * DeltaTime;
+
+	MouseOffset += MouseVelocity * DeltaTime * 10;
+
+	// === 2. Convert offset to world-space offset relative to surface ===
+	FVector Right = AnvilCamera->GetCameraComponent()->GetRightVector();
+	FVector Up = AnvilCamera->GetCameraComponent()->GetUpVector();
+	FVector LocalWorldOffset = (Right * MouseOffset.X + Up * -MouseOffset.Y) * 0.5f;
+
+	// Base position can be center of surface or decal’s current pos
+	FVector BaseLocation = ProductComponent->GetComponentLocation();
+	FVector DecalWorldLocation = BaseLocation + LocalWorldOffset;
+
+	// Optional clamp to mesh bounds
+	{
+		FVector Local = ProductComponent->GetComponentTransform().InverseTransformPosition(DecalWorldLocation);
+		FVector Bounds = ProductComponent->Bounds.BoxExtent;
+
+		Local.X = FMath::Clamp(Local.X, -Bounds.X, Bounds.X);
+		Local.Y = FMath::Clamp(Local.Y, -Bounds.Y, Bounds.Y);
+		Local.Z = FMath::Clamp(Local.Z, -Bounds.Z, Bounds.Z);
+
+		DecalWorldLocation = ProductComponent->GetComponentTransform().TransformPosition(Local);
+	}
+
+	OreIndicator->SetWorldLocation(DecalWorldLocation);
+	OreIndicator->SetWorldRotation(FRotator(-90.f, 0.f, 0.f)); // or match surface normal
+
+	// === 3. Optional pulse/fade effect ===
+	static const FName FadeParam("FadeParameter");
+	UMaterialInstanceDynamic* MID =
+		OreIndicator->GetDecalMaterial()->IsA<UMaterialInstanceDynamic>()
+		? Cast<UMaterialInstanceDynamic>(OreIndicator->GetDecalMaterial())
+		: OreIndicator->CreateDynamicMaterialInstance();
+
+	if (MID)
+	{
+		const float Pulse = 0.6f + 0.4f * FMath::Sin(GetWorld()->TimeSeconds * 6.f);
+		MID->SetScalarParameterValue(FadeParam, Pulse);
+	}
+
+	// === 4. Raycast downward from decal to get hit ===
+	FHitResult Hit;
+	FVector RayStart = DecalWorldLocation;
+	FVector RayEnd = RayStart - FVector(0, 0, 100);
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, RayStart, RayEnd, ECC_Visibility, Params);
+
+	if (bHit)
+	{
+		// You now have precise collision location on the mesh
+		Location = Hit.ImpactPoint;
+		// Optional: Log or use it
+		// UE_LOG(LogTemp, Log, TEXT("Decal over point: %s"), *ImpactPoint.ToString());
+	}
+
+	// Optional: Show/hide decal if off surface
+	OreIndicator->SetVisibility(bHit);
+}
+
+
+
+FHitResult ABladesmithController::PerformRaycastFromAnvilCamera(FVector Location)
 {
 	if (!AnvilCamera)
 	{
@@ -644,7 +785,7 @@ FHitResult ABladesmithController::PerformRaycastFromAnvilCamera()
 
 	FVector StartLocation = AnvilCamera->GetComponentByClass<UCameraComponent>()->GetComponentLocation();
 	float TraceDistance = 200.0f;
-	FVector EndLocation = WorldLocation + (WorldDirection * TraceDistance);
+	FVector EndLocation = Location + WorldDirection * TraceDistance;
 
 	FHitResult HitResult;
 	FCollisionQueryParams CollisionParams;
@@ -656,35 +797,35 @@ FHitResult ABladesmithController::PerformRaycastFromAnvilCamera()
 		ECollisionChannel::ECC_Camera,
 		CollisionParams
 	);
-
-	FColor LineColor = bHit ? FColor::Green : FColor::Red;
-	float LineLifetime = 1.0f; 
-	DrawDebugPoint(
-		GetWorld(),
-		HitResult.ImpactPoint,
-		10.0f,              // Point size
-		FColor::Blue,       // Color of the point
-		false,              // Persistent (set to true to keep it there indefinitely)
-		1.0f                // Duration (set to -1 for infinite)
-	);
-
+	
 	if (bHit)
 	{
-		if (DecalMaterial)
-		{
-			UGameplayStatics::SpawnDecalAtLocation(
-				GetWorld(),
-				DecalMaterial,
-				FVector(0.2f, 0.2f, 0.2f),
-				HitResult.ImpactPoint,
-				HitResult.ImpactNormal.Rotation(),
-				5.0f 
-			);
-		}
+		// // move / face decal
+		// OreIndicator->SetWorldLocation(HitResult.ImpactPoint);
+		// OreIndicator->SetWorldRotation(HitResult.ImpactNormal.Rotation());
+		// OreIndicator->SetVisibility(true);
+		//
+		// // optional pulse
+		// static const FName FadeParam(TEXT("FadeParameter"));
+		// const float Pulse =
+		// 	0.6f + 0.4f * FMath::Sin(GetWorld()->TimeSeconds * 6.f);
+		// UMaterialInstanceDynamic* MID =
+		// 	OreIndicator->GetDecalMaterial()->IsA<UMaterialInstanceDynamic>()
+		// 	? Cast<UMaterialInstanceDynamic>(OreIndicator->GetDecalMaterial())
+		// 	: OreIndicator->CreateDynamicMaterialInstance();
+		// MID->SetScalarParameterValue(FadeParam, Pulse);
 	}
-	return HitResult;
+	else
+	{
+		OreIndicator->SetVisibility(false);
+	}
 
+	// debug point (optional)
+	// DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8, bHit ? FColor::Green : FColor::Red, false, 0.05f);
+
+	return HitResult;
 }
+
 
 void ABladesmithController::SaveGameProgress()
 {

@@ -18,7 +18,6 @@ struct FInputActionValue;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnGameModeChange, FHitResult);
 
 UCLASS(config=Game)
 class ASoterioCharacter : public ACharacter
@@ -32,7 +31,8 @@ class ASoterioCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
-	
+
+
 	/** MappingContext */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputMappingContext* DefaultMappingContext;
@@ -131,7 +131,10 @@ protected:
 
 	void GameModeSwitch();
 public:
-	FOnGameModeChange NewGameMode;
+
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameModeChange, ES_GameMode, NewMode);
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnGameModeChange OnGameModeChanged;
 
 	void SwitchGameControls(FHitResult Result);
 

@@ -11,7 +11,13 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/EngineTypes.h"
+#include "Sound/SoundCue.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
 #include "Kismet/GameplayStatics.h"
+#include "UInputConfigData.h"
+#include "Blueprint/UserWidget.h"
+#include "Delegates/Delegate.h"
 #include "Camera/CameraActor.h"
 
 #include "../../Plugins/RealtimeMeshComponent/Source/RealtimeMeshComponent/Public/RealtimeMeshComponent.h"
@@ -19,6 +25,7 @@
 #include "../../Plugins/RealtimeMeshComponent/Source/RealtimeMeshComponent/Public/RealtimeMeshCollisionLibrary.h"
 
 #include "GameTypes.h"
+#include "AnvilInterface.h"
 #include "S_Material.h"
 #include "DebugOverlay.h"
 #include "SoterioCharacter.h"
@@ -30,6 +37,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBladesmithController , Log, All);
 DECLARE_MULTICAST_DELEGATE(FDayChange)
 
 class ACameraActor;
+class UEnhancedInputComponent;
 
 #define SOCKET_BS_LEFT_HAND "BS_LEFT_HAND"
 #define SOCKET_BS_LEFT_SHIT "BS_RIGHT_HAND"
@@ -55,7 +63,7 @@ private:
 
 	TArray<FHammerData*> HammerList;
 
-	UDecalComponent* OreIndicator;
+	UDecalComponent* OreIndicator = nullptr;
 
 	UMaterialInterface* FlatIndicatorMaterial;
 
@@ -68,9 +76,7 @@ private:
 	//TArray<URealtimeMeshComponent*> ProductQuery;
 
 	TArray<SB_Material> Inventory;
-
-	float FurnaceHeat;
-
+	
 	UMaterialInstanceDynamic* DynamicMaterial;
 
 	TArray<FProductProperties*> ProductQuery;
@@ -81,9 +87,15 @@ public:
 	float BellowBlowAmount;
 
 	UDebugOverlay* DebugOverlay;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
 	float DayDuration;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
+	float FurnaceHeat;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
+	float HittingForce;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraBlendTime = 0.5f;
 
@@ -108,6 +120,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Anvil")
 	int DefaultSmoothRate = 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Anvil")
+	UAnvilInterface* AnvilInterface;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sounds")
+	USoundCue* HitSoundCue;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Controls")
+	UUInputConfigData* InputConfigData;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UDataTable* HammerData;
 
@@ -116,7 +137,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bScreenDebug;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UStaticMesh* BaseStaticMesh;
 
@@ -159,7 +180,8 @@ public:
 	/*
 	Game Mode Operations
 	*/
-	void SwitchGameMode(FHitResult HitResult);
+	UFUNCTION(BlueprintCallable)
+	void SwitchGameMode(ES_GameMode NewMode);
 	void SwitchCamera();
 
 	/// <summary>
@@ -169,13 +191,19 @@ public:
 
 	UFUNCTION()
 	void TimePasses();
-
+	UFUNCTION()
+	void UpdateAnvilDecalFromMouse(float Delta, FVector Location);
+	void BindControls();
+	void PlayHitSound() const;
 	void CreateOreInstance();
 	void HeatUpForge();
 	void SwitchDefaultMode();
 
+	void OnAnvilHit();
+	void OnRotateMesh(bool isClockWise);
+
 	void UpdateProduct(int CalculateNormalsDepth = 0);
-	FHitResult PerformRaycastFromAnvilCamera();
+	FHitResult PerformRaycastFromAnvilCamera(FVector Location);
 
 	void SaveGameProgress();
 	void LoadGameProgress(FString& SaveName);

@@ -34,12 +34,6 @@ ASoterioCharacter::ASoterioCharacter()
 
 	// Note: For faster iteration times these variables, and many more, can be tweaked in the Character Blueprint
 	// instead of recompiling to adjust them
-	GetCharacterMovement()->JumpZVelocity = 700.f;
-	GetCharacterMovement()->AirControl = 0.35f;
-	GetCharacterMovement()->MaxWalkSpeed = 500.f;
-	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
-	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
-	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -125,7 +119,6 @@ void ASoterioCharacter::GameModeSwitch()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Broadcasting NewGameMode for Actor: %s"), *HitResult.GetActor()->GetFName().ToString());
 		SwitchGameControls(HitResult);
-		NewGameMode.Broadcast(HitResult);
 	}
 	else
 	{
@@ -137,13 +130,11 @@ void ASoterioCharacter::SwitchGameControls(FHitResult Result)
 {
 	if (Result.GetActor()->Tags.Contains(FName("Anvil")))
 	{
-		UE_LOG(LogTemp, Log, TEXT("Switching Anvil Controls"));
-		BindAnvilControls();
+		OnGameModeChanged.Broadcast(ES_GameMode::Anvil);
 	}
 	else if (Result.GetActor()->Tags.Contains(FName("Forge")))
 	{
-		UE_LOG(LogTemp, Log, TEXT("Switching Forge Controls"));
-		//BindForgeControls();
+		OnGameModeChanged.Broadcast(ES_GameMode::Forge);
 	}
 }
 
@@ -224,39 +215,53 @@ void ASoterioCharacter::ClearAllControls()
 	{
 		EnhancedInputComponent->ClearActionBindings();
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("EnhancedInputComponent not found on %s during ClearAllControls"), *GetName());
+	}
 }
 
 void ASoterioCharacter::BindAnvilControls()
 {
-	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!PlayerController) return;
+
+	ULocalPlayer* LocalPlayer = PlayerController->GetLocalPlayer();
+	if (!LocalPlayer) return;
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer);
+	if (Subsystem)
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			Subsystem->ClearAllMappings();
-			Subsystem->AddMappingContext(AnvilMappingContext, 0);
-		}
+		Subsystem->ClearAllMappings();
+		Subsystem->AddMappingContext(AnvilMappingContext, 0);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to get EnhancedInputLocalPlayerSubsystem"));
+		return;
 	}
 
-	TObjectPtr<class UInputComponent> PlayerInputComponent = GetWorld()->GetFirstPlayerController()->InputComponent;
-
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
+	{
 		EnhancedInputComponent->ClearActionBindings();
-		//// Jumping
-		EnhancedInputComponent->BindAction(IA_Anvil_Exit, ETriggerEvent::Triggered, this, &ASoterioCharacter::GameModeSwitch);
-		//EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
-		// Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ASoterioCharacter::Move);
+		// Exit Anvil
+		EnhancedInputComponent->BindAction(IA_Anvil_Exit, ETriggerEvent::Triggered, this, &ASoterioCharacter::GameModeSwitch);
+
+		// Movement
+		EnhancedInputComponent->BindAction(IA_Anvil_Hit, ETriggerEvent::Triggered, this, &ASoterioCharacter::Move);
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ASoterioCharacter::Look);
 	}
 	else
 	{
-		UE_LOG(LogTemplateCharacter, Error, TEXT("'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
+		UE_LOG(LogTemp, Error, TEXT("No EnhancedInputComponent found in character '%s'"), *GetName());
 	}
-	CheckInputBindings();
+
+	CheckInputBindings(); // optional for debug
 }
+
 
 void ASoterioCharacter::CheckInputBindings()
 {

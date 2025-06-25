@@ -292,21 +292,53 @@ URealtimeMeshSimple* USoterioMeshLib::CreateOreInstance(UStaticMesh* BaseStaticM
 inline static void FlatHammerShape(FProductProperties& ProductProperties, FHammerData& Hammer, FHitResult Hit, bool bDebug)
 {
 	FVector3f HitLocation = FVector3f(Hit.Location);
-
 	FVector3f Local = FVector3f(Hit.Component->GetComponentTransform().InverseTransformPosition(FVector(HitLocation)));
 	FVector3f ImpactNormal = FVector3f(0, 0, 1);
+
+	// Square hammer parameters
+	const float MaxHammerSize = 5.0f; // Half-width of the square hammer head
+	const float MaxHammerSizeSquared = MaxHammerSize * MaxHammerSize;
+
 	int i = 0;
 	float StressBound = ((ProductProperties.MaxLength - ProductProperties.Length) / ProductProperties.MaxLength);
+
 	for (FVector3f& Vert : ProductProperties.Vertices)
 	{
-		FVector3f Deform = ImpactNormal * (0.1f * (ProductProperties.VertexHeat[i] / 1440)) * Vert.Z;
-		Vert -= Deform;
-		if (ProductProperties.bIsMaxLength == false)
+		// Calculate square distance (check if within square bounds)
+		FVector3f Delta = Vert - Local;
+		float AbsX = FMath::Abs(Delta.X);
+		float AbsY = FMath::Abs(Delta.Y);
+    
+		// Check if vertex is within square hammer area
+		if (AbsX <= MaxHammerSize && AbsY <= MaxHammerSize)
 		{
-			float HeatEffect = ProductProperties.VertexHeat[i] / 1440;
-			float StressEffect = StressBound / 3;
-			Vert.Y *= FMath::Pow(1 + HeatEffect * StressEffect, 0.07f);
-			Vert.X *= FMath::Pow(1 + HeatEffect * StressEffect, 0.03);
+			// Calculate square-based falloff (distance from center to edge of square)
+			float NormalizedDistX = AbsX / MaxHammerSize; // 0 at center, 1 at edge
+			float NormalizedDistY = AbsY / MaxHammerSize;
+        
+			// Use the maximum distance in either direction (Chebyshev distance)
+			float SquareDistance = FMath::Max(NormalizedDistX, NormalizedDistY);
+        
+			// Alternative: Use both X and Y for smoother falloff
+			// float SquareDistance = FMath::Sqrt(NormalizedDistX * NormalizedDistX + NormalizedDistY * NormalizedDistY);
+        
+			// Calculate falloff (1 at center, 0 at edges)
+			float DistanceFalloff = FMath::Clamp(1.0f - SquareDistance, 0.001f, 1.0f);
+        
+			// Apply deformation with square-based falloff
+			float HeatEffect = ProductProperties.VertexHeat[i] / 1440.0f;
+			FVector3f Deform = ImpactNormal * (DistanceFalloff * HeatEffect * (Hammer.Weigth * 0.1f)) * (Vert.Z * 0.1f);
+			Vert -= Deform;
+        
+			// Apply spreading effects only within the hammer area
+			if (ProductProperties.bIsMaxLength == false || !USoterioMeshLib::CheckThickness(ProductProperties, Vert))
+			{
+				float StressEffect = StressBound / 3.0f;
+				float CombinedEffect = HeatEffect * StressEffect * DistanceFalloff; // Include distance in spreading too
+            
+				Vert.Y *= FMath::Pow(1 + CombinedEffect, 0.07f);
+				Vert.X *= FMath::Pow(1 + CombinedEffect, 0.03f);
+			}
 		}
 		i++;
 	}
@@ -451,10 +483,10 @@ void USoterioMeshLib::CalculateSmoothNormals(FProductProperties* Product, int De
 	}
 }
 
-void USoterioMeshLib::UpdateHeat(FProductProperties& Product, float Heat)
+void USoterioMeshLib::UpdateHeat(FProductProperties& Product, float Heat, FVector3f HeatPoint)
 {
 	const float MaxHeat = 1440.0f;
-	float HeatFactor = 0.8f;
+	float HeatFactor = 0.3f;
 	const float MaxDistance =19.5f;
 
 	for (int i = 0; i < Product.Vertices.Num(); i++)
@@ -483,7 +515,7 @@ void USoterioMeshLib::UpdateHeat(FProductProperties& Product, float Heat)
 			HeatFactor = 1;
 		}
 
-		float Distance = FMath::Clamp(FVector3f::Dist(Product.Vertices[i], FVector3f(0, -9, 0)), 0, MaxDistance);
+		float Distance = FMath::Clamp(FVector3f::Dist(Product.Vertices[i], HeatPoint), 0, MaxDistance);
 		Product.VertexHeat[i] += (MaxDistance - Distance) * HeatFactor;
 		if (Product.VertexHeat[i] > MaxHeat)
 		{
@@ -497,7 +529,7 @@ void USoterioMeshLib::DecreaseHeat(FProductProperties& Product)
 {
 	for (int i = 0; i < Product.Vertices.Num(); i++)
 	{
-		Product.VertexHeat[i] -= (Product.VertexHeat[i] / 5760) * ((FVector3f::Dist(FVector3f(0, 0, 0), Product.Vertices[i])) / 6);
+		Product.VertexHeat[i] -= (Product.VertexHeat[i] / 1440) * ((FVector3f::Dist(FVector3f(0, 0, 0), Product.Vertices[i])) / 26);
 		if (Product.VertexHeat[i] <= 0)
 		{
 			Product.VertexHeat[i] = 0;
@@ -632,17 +664,10 @@ TObjectPtr<USplineComponent> USoterioMeshLib::GenerateSpline(FProductProperties&
 }
 
 
-bool USoterioMeshLib::CheckThickness(FProductProperties& Product)
+bool USoterioMeshLib::CheckThickness(FProductProperties& Product, FVector3f Vertex)
 {
-	float MinZ = FLT_MAX;
-	float MaxZ = -FLT_MAX;
-
-	for (const FVector3f& Vert : Product.Vertices)
-	{
-		MinZ = FMath::Min(MinZ, Vert.Z);
-		MaxZ = FMath::Max(MaxZ, Vert.Z);
-	}
-
+	if (Vertex.GetAbs().Z <= Product.MaxThickness)
+		return true;
 	return false;
 }
 
